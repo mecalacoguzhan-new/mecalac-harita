@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Türkiye Servis Haritası</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+  :root {
+    --bg: #0c1118;
+    --surface: #131b24;
+    --surface2: #192230;
+    --border: #1d2c3d;
+    --accent: #3b82f6;
+    --accent2: #93c5fd;
+    --text: #dde8f5;
+    --text-muted: #4d6a88;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body { width: 100%; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 800px;
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 10;
+    height: 54px;
+  }
+  .topbar-brand { display: flex; align-items: center; gap: 10px; }
+  .brand-icon {
+    width: 30px; height: 30px;
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px;
+  }
+  .brand-name {
+    font-family: 'Syne', sans-serif;
+    font-size: 14px; font-weight: 700;
+    color: var(--text);
+  }
+  .topbar-stats { display: flex; gap: 24px; align-items: center; }
+  .stat { text-align: center; }
+  .stat-value {
+    font-family: 'Syne', sans-serif;
+    font-size: 20px; font-weight: 800;
+    color: var(--accent2); line-height: 1;
+  }
+  .stat-label {
+    font-size: 10px; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.1em; margin-top: 2px;
+  }
+
+  .main {
+    display: flex;
+    flex: 1;
+    height: calc(800px - 54px);
+    overflow: hidden;
+  }
+
+  .map-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+
+  #map-svg {
+    width: 100%; height: 100%;
+    cursor: grab;
+  }
+  #map-svg:active { cursor: grabbing; }
+
+  .province {
+    fill: #172236;
+    stroke: #0c1118;
+    stroke-width: 0.6;
+    cursor: default;
+    transition: fill 0.15s;
+  }
+  .province.clickable { cursor: pointer; }
+  .province.clickable:hover { fill: #1e3a6e; }
+  .province.active {
+    fill: #1d4ed8 !important;
+    stroke: #60a5fa; stroke-width: 1.5;
+  }
+  .province.has-service { fill: #1a3356; }
+
+  .badge-bg {
+    fill: #2563eb;
+    filter: drop-shadow(0 1px 4px rgba(37,99,235,0.7));
+  }
+  .badge-text {
+    fill: white;
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+  }
+
+  .panel {
+    width: 300px; min-width: 300px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+
+  .panel-placeholder {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 40px 24px; text-align: center;
+    gap: 14px; color: var(--text-muted);
+  }
+  .panel-placeholder-icon { font-size: 42px; opacity: 0.35; }
+  .panel-placeholder p { font-size: 13px; line-height: 1.65; }
+
+  .panel-detail {
+    display: none; flex-direction: column;
+    flex: 1; min-height: 0;
+  }
+  .panel-detail.show { display: flex; }
+
+  .panel-head {
+    padding: 18px 18px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0; position: relative;
+  }
+  .panel-close {
+    position: absolute; top: 14px; right: 14px;
+    width: 26px; height: 26px;
+    background: var(--border); border: none; border-radius: 6px;
+    color: var(--text-muted); cursor: pointer; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s;
+  }
+  .panel-close:hover { background: #2a3a4e; color: var(--text); }
+
+  .panel-city-name {
+    font-family: 'Syne', sans-serif;
+    font-size: 22px; font-weight: 800;
+    margin-bottom: 2px; padding-right: 32px;
+  }
+  .panel-subtitle { font-size: 11px; color: var(--text-muted); margin-bottom: 10px; }
+  .panel-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: rgba(59,130,246,0.12);
+    border: 1px solid rgba(59,130,246,0.25);
+    color: var(--accent2); font-size: 11px; font-weight: 600;
+    padding: 3px 10px; border-radius: 20px;
+  }
+
+  .panel-tabs {
+    display: flex;
+    gap: 6px;
+    margin-top: 12px;
+  }
+  .tab-btn {
+    flex: 1;
+    padding: 7px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .tab-btn.active {
+    background: rgba(59,130,246,0.15);
+    border-color: rgba(59,130,246,0.4);
+    color: var(--accent2);
+  }
+  .tab-btn:hover:not(.active) { background: #1e2c3d; color: var(--text); }
+
+  .panel-scroll {
+    flex: 1; min-height: 0;
+    overflow-y: auto; padding: 10px;
+  }
+  .panel-scroll::-webkit-scrollbar { width: 4px; }
+  .panel-scroll::-webkit-scrollbar-thumb { background: #2a3a4e; border-radius: 2px; }
+
+  .scard {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px; margin-bottom: 8px;
+    animation: up 0.22s ease both;
+  }
+  @keyframes up {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .scard:hover { border-color: #2563eb44; }
+  .scard-num {
+    font-size: 10px; font-weight: 600; color: var(--accent2);
+    letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 5px;
+  }
+  .scard-name {
+    font-family: 'Syne', sans-serif;
+    font-size: 13px; font-weight: 700; margin-bottom: 8px; line-height: 1.3;
+  }
+  .scard-row {
+    display: flex; align-items: flex-start; gap: 7px;
+    font-size: 12px; color: var(--text-muted); margin-bottom: 5px; line-height: 1.4;
+  }
+  .scard-row .ico { font-size: 13px; flex-shrink: 0; }
+
+  #tip {
+    position: fixed; background: #192230;
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 10px; font-size: 12px; color: var(--text);
+    pointer-events: none; z-index: 9999; display: none; white-space: nowrap;
+  }
+
+  #loading {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 12px;
+    background: var(--bg); z-index: 100;
+    color: var(--text-muted); font-size: 13px;
+  }
+  .spinner {
+    width: 32px; height: 32px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .zoom-controls {
+    position: absolute; bottom: 20px; right: 20px;
+    display: flex; flex-direction: column; gap: 4px; z-index: 10;
+  }
+  .zoom-btn {
+    width: 32px; height: 32px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-size: 16px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s, border-color 0.15s; line-height: 1;
+  }
+  .zoom-btn:hover { background: #1e3a6e; border-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-brand">
+    <div class="brand-icon">🗺️</div>
+    <div class="brand-name">Türkiye Yetkili Servis Haritası</div>
+  </div>
+  <div class="topbar-stats">
+    <div class="stat">
+      <div class="stat-value" id="st-total">—</div>
+      <div class="stat-label">Toplam Servis</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value" id="st-cities">—</div>
+      <div class="stat-label">Kapsanan İl</div>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="map-wrap">
+    <div id="loading"><div class="spinner"></div>Harita yükleniyor…</div>
+    <svg id="map-svg"></svg>
+    <div class="zoom-controls">
+      <button class="zoom-btn" id="zoomIn" title="Yakınlaş">+</button>
+      <button class="zoom-btn" id="zoomReset" title="Sıfırla" style="font-size:12px">⊙</button>
+      <button class="zoom-btn" id="zoomOut" title="Uzaklaş">−</button>
+    </div>
+  </div>
+
+  <div class="panel" id="panel">
+    <div class="panel-placeholder" id="ph">
+      <div class="panel-placeholder-icon">📍</div>
+      <p>Bir ile tıklayarak servis ve makine bilgilerini görüntüleyin</p>
+    </div>
+    <div class="panel-detail" id="pd">
+      <div class="panel-head">
+        <button class="panel-close" id="closeBtn">✕</button>
+        <div class="panel-city-name" id="pdCity"></div>
+        <div class="panel-tabs">
+          <button class="tab-btn active" id="tabServis" onclick="switchTab('servis')">🔧 Servisler</button>
+          <button class="tab-btn" id="tabMakine" onclick="switchTab('makine')">🚜 Makineler</button>
+        </div>
+      </div>
+      <div class="panel-scroll" id="pdServisList"></div>
+      <div class="panel-scroll" id="pdMakineList" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<div id="tip"></div>
+
+<script>
+const SERVICES = {
+  "adana": [
+    { name: "Devecioğlu İş Makineleri - Adana", bulundugu: "Adana", address: "", contact: "Yunus Deveci" },
+  ],
+  "adiyaman": [
+    { name: "OkanTech İş Makinaları - Malatya", bulundugu: "Malatya", address: "Yakınca Mah., Özsan Sanayi Sitesi Cad., Özsan San. 21. Blok 21/11, Yeşilyurt / Malatya", contact: "Okan Tek" },
+  ],
+  "aksaray": [
+    { name: "Kumru İş Makineleri", bulundugu: "", address: "", contact: "" },
+  ],
+  "ankara": [
+    { name: "Atlı İş Makineleri", bulundugu: "Ankara", address: "Ostim, 1219. Sk No:19, 06374 Yenimahalle / Ankara", contact: "" },
+  ],
+  "antalya": [
+    { name: "TİM MAKİNA", bulundugu: "Antalya", address: "Akçaalan Mah., Sanayi Sitesi 4146 Sk. No:19, Serik / Antalya", contact: "Harun Uyar" },
+  ],
+  "aydin": [
+    { name: "VRD İş Makineleri", bulundugu: "İzmir", address: "Kemalpaşa OSB, Ankara Caddesi No:17, İç Kapı No:2, 35170 Kemalpaşa / İzmir", contact: "" },
+  ],
+  "balikesir": [
+    { name: "Zeybel İş Makineleri", bulundugu: "Balıkesir", address: "Yeni Sanayi Sitesi, 54. Sk. No:32, 10020 Karesi / Balıkesir", contact: "Nurullah Zeybel, Sibel Zeybel" },
+  ],
+  "batman": [
+    { name: "AB İş Makineleri", bulundugu: "Diyarbakır", address: "Bağcılar Mah., Siverek Cad. No:150, Bağlar / Diyarbakır", contact: "Abdurrahim Bayram" },
+  ],
+  "bilecik": [
+    { name: "Volfi İş Makineleri", bulundugu: "Kocaeli", address: "Piri Reis Mahallesi, Barbaros Cad., Samet Sk. No:25/B, 41700 Darıca / Kocaeli", contact: "İbrahim Alptekin, Mehtap Ecevit, Fatih Güzelyurt, Yaşar Bey" },
+  ],
+  "bingol": [
+    { name: "AB İş Makineleri", bulundugu: "Diyarbakır", address: "Bağcılar Mah., Siverek Cad. No:150, Bağlar / Diyarbakır", contact: "Abdurrahim Bayram" },
+  ],
+  "bitlis": [
+    { name: "AB İş Makineleri", bulundugu: "Diyarbakır", address: "Bağcılar Mah., Siverek Cad. No:150, Bağlar / Diyarbakır", contact: "Abdurrahim Bayram" },
+  ],
+  "bolu": [
+    { name: "Volfi İş Makineleri", bulundugu: "Kocaeli", address: "Piri Reis Mahallesi, Barbaros Cad., Samet Sk. No:25/B, 41700 Darıca / Kocaeli", contact: "İbrahim Alptekin, Mehtap Ecevit, Fatih Güzelyurt, Yaşar Bey" },
+  ],
+  "burdur": [
+    { name: "TİM MAKİNA", bulundugu: "Antalya", address: "Akçaalan Mah., Sanayi Sitesi 4146 Sk. No:19, Serik / Antalya", contact: "Harun Uyar" },
+  ],
+  "canakkale": [
+    { name: "Zeybel İş Makineleri", bulundugu: "Balıkesir", address: "Yeni Sanayi Sitesi, 54. Sk. No:32, 10020 Karesi / Balıkesir", contact: "Nurullah Zeybel, Sibel Zeybel" },
+  ],
+  "corum": [
+    { name: "Atlı İş Makineleri", bulundugu: "Ankara", address: "Ostim, 1219. Sk No:19, 06374 Yenimahalle / Ankara", contact: "" },
+  ],
+  "denizli": [
+    { name: "Kayatek İş Makineleri", bulundugu: "Denizli", address: "Sümer Mah., 2507 Sk. No:85/B, Merkezefendi / Denizli", contact: "Güldane Kaya, Mahmut Kaya, Mehmet Bedirhan Kaya, Gülcan Akbulut" },
+  ],
+  "diyarbakir": [
+    { name: "AB İş Makineleri", bulundugu: "Diyarbakır", address: "Bağcılar Mah., Siverek Cad. No:150, Bağlar / Diyarbakır", contact: "Abdurrahim Bayram" },
+  ],
+  "duzce": [
+    { name: "Volfi İş Makineleri", bulundugu: "Kocaeli", address: "Piri Reis Mahallesi, Barbaros Cad., Samet Sk. No:25/B, 41700 Darıca / Kocaeli", contact: "İbrahim Alptekin, Mehtap Ecevit, Fatih Güzelyurt, Yaşar Bey" },
+  ],
+  "edirne": [
+    { name: "Gül-Ay İş Makineleri", bulundugu: "Tekirdağ", address: "Karadeniz Mah., Dumansız 15. Sk., 9. Sk. San. Sit. No:8/2, 59200 Süleymanpaşa / Tekirdağ", contact: "Vural Gülay" },
+  ],
+  "elazig": [
+    { name: "AB İş Makineleri", bulundugu: "Diyarbakır", address: "Bağcılar Mah., Siverek Cad. No:150, Bağlar / Diyarbakır", contact: "Abdurrahim Bayram" },
+  ],
+  "eskisehir": [
+    { name: "Murat İş Makineleri", bulundugu: "Eskişehir", address: "", contact: "" },
+  ],
+  "gaziantep": [
+    { name: "OkanTech İş Makinaları - Gaziantep", bulundugu: "Gaziantep", address: "Sanayi Mah., 60264 Nolu Cad. No:20/A, Şehitkamil / Gaziantep", contact: "Okan Tek" },
+  ],
+  "hakkari": [
+    { name: "AB İş Makineleri", bulundugu: "Diyarbakır", address: "Bağcılar Mah., Siverek Cad. No:150, Bağlar / Diyarbakır", contact: "Abdurrahim Bayram" },
+  ],
+  "hatay": [
+    { name: "Devecioğlu İş Makineleri - Adana", bulundugu: "Adana", address: "", contact: "Yunus Deveci" },
+  ],
+  "isparta": [
+    { name: "TİM MAKİNA", bulundugu: "Antalya", address: "Akçaalan Mah., Sanayi Sitesi 4146 Sk. No:19, Serik / Antalya", contact: "Harun Uyar" },
+  ],
+  "istanbul": [
+    { name: "Yeşeren İş Makineleri", bulundugu: "İstanbul - Avrupa Yakası", address: "İkitelli OSB, Sefaköy Sanayi Sitesi 7. Blok No:18, 34520 Başakşehir / İstanbul", contact: "Ebubekir Yemenici, Emre Bey, İsa Şekerci" },
+    { name: "Volfi İş Makineleri (Anadolu Yakası)", bulundugu: "Kocaeli", address: "Piri Reis Mahallesi, Barbaros Cad., Samet Sk. No:25/B, 41700 Darıca / Kocaeli", contact: "İbrahim Alptekin, Mehtap Ecevit, Fatih Güzelyurt, Yaşar Bey" },
+  ],
+  "izmir": [
+    { name: "VRD İş Makineleri", bulundugu: "İzmir", address: "Kemalpaşa OSB, Ankara Caddesi No:17, İç Kapı No:2, 35170 Kemalpaşa / İzmir", contact: "" },
+  ],
+  "karaman": [
+    { name: "Kumru İş Makineleri", bulundugu: "", address: "", contact: "" },
+  ],
+  "kayseri": [
+    { name: "Kısataş İş Makineleri", bulundugu: "Kayseri", address: "Anbar Mh., 2998. Sk. No:32/A, Melikgazi / Kayseri / Türkiye", contact: "İrfan Kısa" },
+  ],
+  "kilis": [
+    { name: "OkanTech İş Makinaları - Gaziantep", bulundugu: "Gaziantep", address: "Sanayi Mah., 60264 Nolu Cad. No:20/A, Şehitkamil / Gaziantep", contact: "Okan Tek" },
+  ],
+  "kirikkale": [
+    { name: "Atlı İş Makineleri", bulundugu: "Ankara", address: "Ostim, 1219. Sk No:19, 06374 Yenimahalle / Ankara", contact: "" },
+  ],
+  "kirklareli": [
+    { name: "Gül-Ay İş Makineleri", bulundugu: "Tekirdağ", address: "Karadeniz Mah., Dumansız 15. Sk., 9. Sk. San. Sit. No:8/2, 59200 Süleymanpaşa / Tekirdağ", contact: "Vural Gülay" },
+  ],
+  "kirsehir": [
+    { name: "Atlı İş Makineleri", bulundugu: "Ankara", address: "Ostim, 1219. Sk No:19, 06374 Yenimahalle / Ankara", contact: "" },
+  ],
+  "kahramanmaras": [
+    { name: "Cesur İş Makineleri", bulundugu: "K.Maraş", address: "Yavuz Selim Mahallesi, Küçük Sanayi Sitesi 83. Cadde No:11 A, Dulkadiroğlu / Kahramanmaraş", contact: "Sebahattin Tok" },
+  ],
+  "kocaeli": [
+    { name: "Volfi İş Makineleri", bulundugu: "Kocaeli", address: "Piri Reis Mahallesi, Barbaros Cad., Samet Sk. No:25/B, 41700 Darıca / Kocaeli", contact: "İbrahim Alptekin, Mehtap Ecevit, Fatih Güzelyurt, Yaşar Bey" },
+  ],
+  "konya": [
+    { name: "Kumru İş Makineleri", bulundugu: "", address: "", contact: "" },
+  ],
+  "malatya": [
+    { name: "OkanTech İş Makinaları - Malatya", bulundugu: "Malatya", address: "Yakınca Mah., Özsan Sanayi Sitesi Cad., Özsan San. 21. Blok 21/11, Yeşilyurt / Malatya", contact: "Okan Tek" },
+  ],
+  "manisa": [
+    { name: "VRD İş Makineleri", bulundugu: "İzmir", address: "Kemalpaşa OSB, Ankara Caddesi No:17, İç Kapı No:2, 35170 Kemalpaşa / İzmir", contact: "" },
+  ],
+  "mardin": [
+    { name: "AB İş Makineleri", bulundugu: "Diyarbakır", address: "Bağcılar Mah., Siverek Cad. No:150, Bağlar / Diyarbakır", contact: "Abdurrahim Bayram" },
+  ],
+  "mersin": [
+    { name: "Devecioğlu İş Makineleri - Mersin", bulundugu: "Mersin", address: "Alparslan Türkeş Bulvarı, Kaledibi, Devecioğlu İsmaksan No:19, 33830 Bozyazı / Mersin", contact: "Yunus Deveci" },
+  ],
+  "mugla": [
+    { name: "Emre İş Makineleri", bulundugu: "Muğla", address: "Bayır Mahallesi, Abdi Merttürk Cd. No:8, Menteşe / Muğla", contact: "Rasim Ak" },
+  ],
+  "mus": [
+    { name: "AB İş Makineleri", bulundugu: "Diyarbakır", address: "Bağcılar Mah., Siverek Cad. No:150, Bağlar / Diyarbakır", contact: "Abdurrahim Bayram" },
+  ],
+  "nevsehir": [
+    { name: "Kısataş İş Makineleri", bulundugu: "Kayseri", address: "Anbar Mh., 2998. Sk. No:32/A, Melikgazi / Kayseri / Türkiye", contact: "İrfan Kısa" },
+  ],
+  "nigde": [
+    { name: "Kısataş İş Makineleri", bulundugu: "Kayseri", address: "Anbar Mh., 2998. Sk. No:32/A, Melikgazi / Kayseri / Türkiye", contact: "İrfan Kısa" },
+  ],
+  "osmaniye": [
+    { name: "Devecioğlu İş Makineleri - Adana", bulundugu: "Adana", address: "", contact: "Yunus Deveci" },
+  ],
+  "sakarya": [
+    { name: "Volfi İş Makineleri", bulundugu: "Kocaeli", address: "Piri Reis Mahallesi, Barbaros Cad., Samet Sk. No:25/B, 41700 Darıca / Kocaeli", contact: "İbrahim Alptekin, Mehtap Ecevit, Fatih Güzelyurt, Yaşar Bey" },
+  ],
+  "sanliurfa": [
+    { name: "OkanTech İş Makinaları - Gaziantep", bulundugu: "Gaziantep", address: "Sanayi Mah., 60264 Nolu Cad. No:20/A, Şehitkamil / Gaziantep", contact: "Okan Tek" },
+  ],
+  "siirt": [
+    { name: "AB İş Makineleri", bulundugu: "Diyarbakır", address: "Bağcılar Mah., Siverek Cad. No:150, Bağlar / Diyarbakır", contact: "Abdurrahim Bayram" },
+  ],
+  "sirnak": [
+    { name: "AB İş Makineleri", bulundugu: "Diyarbakır", address: "Bağcılar Mah., Siverek Cad. No:150, Bağlar / Diyarbakır", contact: "Abdurrahim Bayram" },
+  ],
+  "sivas": [
+    { name: "Kısataş İş Makineleri", bulundugu: "Kayseri", address: "Anbar Mh., 2998. Sk. No:32/A, Melikgazi / Kayseri / Türkiye", contact: "İrfan Kısa" },
+  ],
+  "tekirdag": [
+    { name: "Gül-Ay İş Makineleri", bulundugu: "Tekirdağ", address: "Karadeniz Mah., Dumansız 15. Sk., 9. Sk. San. Sit. No:8/2, 59200 Süleymanpaşa / Tekirdağ", contact: "Vural Gülay" },
+  ],
+  "yalova": [
+    { name: "Volfi İş Makineleri", bulundugu: "Kocaeli", address: "Piri Reis Mahallesi, Barbaros Cad., Samet Sk. No:25/B, 41700 Darıca / Kocaeli", contact: "İbrahim Alptekin, Mehtap Ecevit, Fatih Güzelyurt, Yaşar Bey" },
+  ],
+  "yozgat": [
+    { name: "Kısataş İş Makineleri", bulundugu: "Kayseri", address: "Anbar Mh., 2998. Sk. No:32/A, Melikgazi / Kayseri / Türkiye", contact: "İrfan Kısa" },
+  ],
+};
+
+const IL_COLORS = {
+  "adana": "#ff5722", "adiyaman": "#795548", "aksaray": "#ffb300",
+  "ankara": "#e74c3c", "antalya": "#ff9800", "aydin": "#f1c40f",
+  "balikesir": "#2ecc71", "batman": "#9b59b6", "bilecik": "#1abc9c",
+  "bingol": "#9b59b6", "bitlis": "#9b59b6", "bolu": "#1abc9c",
+  "burdur": "#ff9800", "canakkale": "#2ecc71", "corum": "#e74c3c",
+  "denizli": "#00bcd4", "diyarbakir": "#9b59b6", "duzce": "#1abc9c",
+  "edirne": "#e91e8c", "elazig": "#9b59b6", "eskisehir": "#4db6ac",
+  "gaziantep": "#673ab7", "hakkari": "#9b59b6", "hatay": "#ff5722",
+  "isparta": "#ff9800", "istanbul": "#3498db", "izmir": "#f1c40f",
+  "karaman": "#ffb300", "kayseri": "#e67e22", "kilis": "#673ab7",
+  "kirikkale": "#e74c3c", "kirklareli": "#e91e8c", "kirsehir": "#e74c3c",
+  "kahramanmaras": "#f06292", "kocaeli": "#1abc9c", "konya": "#ffb300",
+  "malatya": "#795548", "manisa": "#f1c40f", "mardin": "#9b59b6",
+  "mersin": "#8bc34a", "mugla": "#607d8b", "mus": "#9b59b6",
+  "nevsehir": "#e67e22", "nigde": "#e67e22", "osmaniye": "#ff5722",
+  "sakarya": "#1abc9c", "sanliurfa": "#673ab7", "siirt": "#9b59b6",
+  "sirnak": "#9b59b6", "sivas": "#e67e22", "tekirdag": "#e91e8c",
+  "yalova": "#1abc9c", "yozgat": "#e67e22",
+};
+
+function normalize(str) {
+  let s = str.toLowerCase()
+    .replace(/ğ/g,'g').replace(/ü/g,'u').replace(/ş/g,'s')
+    .replace(/ı/g,'i').replace(/i̇/g,'i').replace(/ö/g,'o').replace(/ç/g,'c')
+    .replace(/\s+/g,'').replace(/\./g,'').replace(/-/g,'');
+  // Special cases
+  if (s === 'kahramanmaras' || s === 'kmaras' || s === 'k.maras') return 'kahramanmaras';
+  return s;
+}
+
+let totalSrv = 0, coveredCities = 0;
+Object.values(SERVICES).forEach(s => { if(s.length) { totalSrv += s.length; coveredCities++; } });
+document.getElementById('st-total').textContent = totalSrv;
+document.getElementById('st-cities').textContent = coveredCities;
+
+const svg = d3.select('#map-svg');
+const tip = document.getElementById('tip');
+let activeEl = null;
+
+async function loadMap() {
+  try {
+    const resp = await fetch('https://raw.githubusercontent.com/codeforgermany/click_that_hood/main/public/data/turkey.geojson');
+    if (!resp.ok) throw new Error('fetch failed');
+    const geojson = await resp.json();
+    renderMap(geojson);
+  } catch(e) {
+    document.getElementById('loading').innerHTML = `
+      <div style="font-size:40px;opacity:0.5">🗺️</div>
+      <div style="color:#4d6a88;font-size:13px;text-align:center;max-width:280px;line-height:1.7">
+        Harita verisi yüklenemedi.<br>
+        CodePen üzerinde çalıştırın.
+      </div>
+    `;
+  }
+}
+
+function renderMap(geojson) {
+  document.getElementById('loading').style.display = 'none';
+
+  const wrap = document.querySelector('.map-wrap');
+  const W = wrap.clientWidth;
+  const H = wrap.clientHeight;
+
+  const projection = d3.geoMercator().fitSize([W - 20, H - 20], geojson);
+  const path = d3.geoPath().projection(projection);
+
+  const g = svg.append('g').attr('id', 'map-g');
+  const badgeG = svg.append('g').attr('id', 'badge-g');
+
+  const zoom = d3.zoom()
+    .scaleExtent([1, 8])
+    .on('zoom', (event) => {
+      const t = event.transform;
+      g.attr('transform', t);
+      badgeG.attr('transform', t);
+      const k = t.k;
+      badgeG.selectAll('.badge-bg').attr('r', 14 / k);
+      badgeG.selectAll('.badge-text').attr('font-size', 11 / k);
+    });
+
+  svg.call(zoom).on('dblclick.zoom', null);
+
+  document.getElementById('zoomIn').addEventListener('click', () => {
+    svg.transition().duration(250).call(zoom.scaleBy, 1.6);
+  });
+  document.getElementById('zoomOut').addEventListener('click', () => {
+    svg.transition().duration(250).call(zoom.scaleBy, 0.625);
+  });
+  document.getElementById('zoomReset').addEventListener('click', () => {
+    svg.transition().duration(400).call(zoom.transform, d3.zoomIdentity);
+  });
+
+  g.selectAll('path')
+    .data(geojson.features)
+    .enter()
+    .append('path')
+    .attr('d', path)
+    .attr('class', d => {
+      const name = d.properties.name || d.properties.NAME_1 || '';
+      const key = normalize(name);
+      const hasSrv = SERVICES[key] && SERVICES[key].length > 0;
+      return 'province' + (hasSrv ? ' has-service clickable' : '');
+    })
+    .style('fill', d => {
+      const name = d.properties.name || d.properties.NAME_1 || '';
+      const key = normalize(name);
+      return IL_COLORS[key] || null;
+    })
+    .on('mouseenter', function(event, d) {
+      const name = d.properties.name || d.properties.NAME_1 || '';
+      const key = normalize(name);
+      const count = (SERVICES[key] || []).length;
+      tip.style.display = 'block';
+      tip.textContent = count > 0 ? `${name} — ${count} servis` : `${name}`;
+    })
+    .on('mousemove', function(event) {
+      tip.style.left = (event.clientX + 14) + 'px';
+      tip.style.top = (event.clientY - 30) + 'px';
+    })
+    .on('mouseleave', function() { tip.style.display = 'none'; })
+    .on('click', function(event, d) {
+      event.stopPropagation();
+      const name = d.properties.name || d.properties.NAME_1 || '';
+      const key = normalize(name);
+      const services = SERVICES[key] || [];
+      if (!services.length) return;
+      if (activeEl) d3.select(activeEl).classed('active', false);
+      d3.select(this).classed('active', true);
+      activeEl = this;
+      showPanel(name, services);
+    });
+
+  geojson.features.forEach(d => {
+    const name = d.properties.name || d.properties.NAME_1 || '';
+    const key = normalize(name);
+    const services = SERVICES[key] || [];
+    if (!services.length) return;
+
+    const centroid = path.centroid(d);
+    if (!centroid || isNaN(centroid[0])) return;
+
+    badgeG.append('circle')
+      .attr('cx', centroid[0]).attr('cy', centroid[1])
+      .attr('r', 14).attr('class', 'badge-bg')
+      .attr('pointer-events', 'none');
+
+    badgeG.append('text')
+      .attr('x', centroid[0]).attr('y', centroid[1])
+      .attr('class', 'badge-text').attr('font-size', 11)
+      .attr('pointer-events', 'none')
+      .text(services.length);
+  });
+}
+
+// ============================================================
+// CODA API
+// ============================================================
+const API_KEY = "ebb6678c-f146-403b-a87c-ccda9da2ad5c"; // <-- Kendi key'inizi buraya yazın
+const DOC_ID = "dAeS4wzQgmQ";
+const TABLE_NAME = "grid-tuWom2Tk";
+
+let currentIl = null;
+
+function switchTab(tab) {
+  document.getElementById('tabServis').classList.toggle('active', tab === 'servis');
+  document.getElementById('tabMakine').classList.toggle('active', tab === 'makine');
+  document.getElementById('pdServisList').style.display = tab === 'servis' ? 'block' : 'none';
+  document.getElementById('pdMakineList').style.display = tab === 'makine' ? 'block' : 'none';
+}
+
+async function fetchMakineler(ilName) {
+  const list = document.getElementById('pdMakineList');
+  list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px;">⏳ Yükleniyor…</div>';
+
+  if (!API_KEY || API_KEY === "BURAYA_API_KEY_YAZIN") {
+    list.innerHTML = '<div style="padding:20px;color:#f06292;font-size:12px;text-align:center;">⚠️ API key girilmemiş.<br>Kodda API_KEY alanını doldurun.</div>';
+    return;
+  }
+
+  try {
+    // Fetch all rows from the table
+    let allRows = [];
+    let pageToken = null;
+    do {
+      const url = new URL(`https://coda.io/apis/v1/docs/${DOC_ID}/tables/${encodeURIComponent(TABLE_NAME)}/rows`);
+      url.searchParams.set('limit', '500');
+      url.searchParams.set('useColumnNames', 'true');
+      if (pageToken) url.searchParams.set('pageToken', pageToken);
+
+      const resp = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${API_KEY}` }
+      });
+
+      if (!resp.ok) throw new Error(`API Hatası: ${resp.status}`);
+      const data = await resp.json();
+      allRows = allRows.concat(data.items || []);
+      pageToken = data.nextPageToken;
+    } while (pageToken);
+
+    // Normalize for matching
+    function norm(s) {
+      if (!s) return '';
+      return String(s).toLowerCase()
+        .replace(/ğ/g,'g').replace(/ü/g,'u').replace(/ş/g,'s')
+        .replace(/ı/g,'i').replace(/i̇/g,'i').replace(/ö/g,'o').replace(/ç/g,'c')
+        .trim();
+    }
+
+    const ilNorm = norm(ilName);
+
+    // Filter rows matching this il
+    const filtered = allRows.filter(row => {
+      const vals = row.values || {};
+      const ilce = vals['İl/İlçe'] || '';
+      const ilceNorm = norm(String(ilce));
+      return ilceNorm.startsWith(ilNorm) || ilceNorm.includes(ilNorm);
+    });
+
+    if (filtered.length === 0) {
+      list.innerHTML = `<div style="padding:32px 20px;text-align:center;color:var(--text-muted);font-size:13px;">Bu ilde kayıtlı makine bulunamadı.</div>`;
+      return;
+    }
+
+    list.innerHTML = filtered.map((row, i) => {
+      const v = row.values || {};
+      const musteri = v['Müşteri Adı'] || '—';
+      const vin = v['Makine Vın Numarası'] || '—';
+      const ilce = v['İl/İlçe'] || '—';
+      return `
+        <div class="scard" style="animation-delay:${i * 0.04}s">
+          <div class="scard-num">Makine ${String(i+1).padStart(2,'0')}</div>
+          <div class="scard-name">${musteri}</div>
+          <div class="scard-row"><span class="ico">🔑</span>VIN: ${vin}</div>
+          <div class="scard-row"><span class="ico">📍</span>${ilce}</div>
+        </div>
+      `;
+    }).join('');
+
+    // Update pill
+    document.getElementById('tabMakine').textContent = `🚜 Makineler (${filtered.length})`;
+
+  } catch(e) {
+    list.innerHTML = `<div style="padding:20px;color:#f06292;font-size:12px;text-align:center;">Hata: ${e.message}</div>`;
+  }
+}
+
+function showPanel(cityName, services) {
+  currentIl = cityName;
+  document.getElementById('ph').style.display = 'none';
+  const pd = document.getElementById('pd');
+  pd.classList.add('show');
+  document.getElementById('pdCity').textContent = cityName;
+
+  // Reset tabs
+  switchTab('servis');
+  document.getElementById('tabMakine').textContent = '🚜 Makineler';
+
+  // Servis listesi
+  const servisList = document.getElementById('pdServisList');
+  if (services.length === 0) {
+    servisList.innerHTML = '<div style="padding:32px 20px;text-align:center;color:var(--text-muted);font-size:13px;">Bu ilde kayıtlı servis bulunamadı.</div>';
+  } else {
+    servisList.innerHTML = services.map((s, i) => `
+      <div class="scard" style="animation-delay:${i * 0.06}s">
+        <div class="scard-num">Servis ${String(i+1).padStart(2,'0')}</div>
+        <div class="scard-name">${s.name}</div>
+        <div class="scard-row"><span class="ico">🏢</span>Bulunduğu İl: ${s.bulundugu || '—'}</div>
+        <div class="scard-row"><span class="ico">📍</span>${s.address || '—'}</div>
+        <div class="scard-row"><span class="ico">👤</span>${s.contact || '—'}</div>
+      </div>
+    `).join('');
+  }
+  document.getElementById('tabServis').textContent = `🔧 Servisler (${services.length})`;
+
+  // Makine verisini çek
+  fetchMakineler(cityName);
+}
+
+document.getElementById('closeBtn').addEventListener('click', () => {
+  if (activeEl) { d3.select(activeEl).classed('active', false); activeEl = null; }
+  document.getElementById('ph').style.display = 'flex';
+  document.getElementById('pd').classList.remove('show');
+  currentIl = null;
+});
+
+loadMap();
+
+</script>
+</body>
+</html>
