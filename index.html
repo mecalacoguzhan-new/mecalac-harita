@@ -717,7 +717,7 @@ async function fetchMakineler(ilName) {
     document.getElementById('tabMakine').textContent = `🚜 Makineler (${filtered.length})`;
 
   } catch(e) {
-    list.innerHTML = `<div style="padding:20px;color:#f06292;font-size:12px;text-align:center;">Hata: ${e.message}</div>`;
+    list.innerHTML = `<div style="padding:20px;color:#f06292;font-size:11px;text-align:center;">Hata: ${e.message}<br><br>DOC: ${DOC_ID}<br>TABLE: ${TABLE_NAME}</div>`;
   }
 }
 
